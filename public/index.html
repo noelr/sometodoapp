@@ -178,6 +178,37 @@
     .clear-completed:hover {
       text-decoration: underline;
     }
+
+    /* Entry animations */
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateX(-20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+
+    @keyframes slideOut {
+      from {
+        opacity: 1;
+        transform: translateX(0);
+      }
+      to {
+        opacity: 0;
+        transform: translateX(20px);
+      }
+    }
+
+    .todo-item.adding {
+      animation: slideIn 0.3s ease-out forwards;
+    }
+
+    .todo-item.removing {
+      animation: slideOut 0.25s ease-in forwards;
+    }
   </style>
 </head>
 <body>
@@ -204,6 +235,7 @@
     const STORAGE_KEY = 'bun-todo-app';
 
     let todos = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    let newlyAddedId = null;
 
     const todoInput = document.getElementById('todoInput');
     const addBtn = document.getElementById('addBtn');
@@ -223,13 +255,22 @@
         return;
       }
 
-      todoList.innerHTML = todos.map((todo, index) => `
-        <li class="todo-item ${todo.completed ? 'completed' : ''}" data-index="${index}">
-          <div class="todo-checkbox" onclick="toggleTodo(${index})"></div>
-          <span class="todo-text">${escapeHtml(todo.text)}</span>
-          <button class="delete-btn" onclick="deleteTodo(${index})">×</button>
-        </li>
-      `).join('');
+      todoList.innerHTML = todos.map((todo, index) => {
+        const isNew = todo.id === newlyAddedId;
+        const classes = ['todo-item'];
+        if (todo.completed) classes.push('completed');
+        if (isNew) classes.push('adding');
+        return `
+          <li class="${classes.join(' ')}" data-index="${index}" data-id="${todo.id}">
+            <div class="todo-checkbox" onclick="toggleTodo(${index})"></div>
+            <span class="todo-text">${escapeHtml(todo.text)}</span>
+            <button class="delete-btn" onclick="deleteTodo(${index})">×</button>
+          </li>
+        `;
+      }).join('');
+
+      // Clear the newlyAddedId after render
+      newlyAddedId = null;
 
       const remaining = todos.filter(t => !t.completed).length;
       const completedCount = todos.filter(t => t.completed).length;
@@ -249,7 +290,9 @@
       const text = todoInput.value.trim();
       if (!text) return;
 
-      todos.push({ text, completed: false, id: Date.now() });
+      const id = Date.now();
+      todos.push({ text, completed: false, id });
+      newlyAddedId = id;
       saveTodos();
       renderTodos();
       todoInput.value = '';
@@ -263,15 +306,42 @@
     }
 
     function deleteTodo(index) {
-      todos.splice(index, 1);
-      saveTodos();
-      renderTodos();
+      const item = todoList.querySelector(`[data-index="${index}"]`);
+      if (item) {
+        item.classList.add('removing');
+        item.addEventListener('animationend', () => {
+          todos.splice(index, 1);
+          saveTodos();
+          renderTodos();
+        }, { once: true });
+      } else {
+        todos.splice(index, 1);
+        saveTodos();
+        renderTodos();
+      }
     }
 
     function clearCompletedTodos() {
-      todos = todos.filter(t => !t.completed);
-      saveTodos();
-      renderTodos();
+      const completedItems = todoList.querySelectorAll('.todo-item.completed');
+      if (completedItems.length === 0) {
+        todos = todos.filter(t => !t.completed);
+        saveTodos();
+        renderTodos();
+        return;
+      }
+
+      let animationsComplete = 0;
+      completedItems.forEach(item => {
+        item.classList.add('removing');
+        item.addEventListener('animationend', () => {
+          animationsComplete++;
+          if (animationsComplete === completedItems.length) {
+            todos = todos.filter(t => !t.completed);
+            saveTodos();
+            renderTodos();
+          }
+        }, { once: true });
+      });
     }
 
     addBtn.addEventListener('click', addTodo);
